@@ -15,9 +15,11 @@ namespace OleksiiRoik.RobotChallenge
     public class OleksiiRoikAlgorithm : IRobotAlgorithm
     {
 
-        Dictionary<int, RobotInfo> RobotsInfo;
+        public int roundNumber;
+        public Dictionary<int, RobotInfo> RobotsInfo;
 
-        enum RobotState
+        //Перелічуваний тип станів робота
+        public enum RobotState
         {
             Moving,
             Collecting,
@@ -29,12 +31,19 @@ namespace OleksiiRoik.RobotChallenge
         public OleksiiRoikAlgorithm()
         {
             RobotsInfo = new Dictionary<int, RobotInfo>();
-         
-            
+            Logger.OnLogRound += Logger_OnLogRound;
+            roundNumber  = 0;
+
+
         }
 
-        //Допоміжні функції
-        struct RobotInfo
+        private void Logger_OnLogRound(object sender, LogRoundEventArgs e)
+        {
+           roundNumber++;
+        }
+
+        //Структруа, що зберігає інформацію про роботів потрібну для роботи алгоритму
+        public struct RobotInfo
         {
             public RobotState state;
             public Position interest;
@@ -45,7 +54,7 @@ namespace OleksiiRoik.RobotChallenge
         }
 
        
-
+        //Перевірка чи на клітинці не знаходяться роботи
         public bool IsCellFree(Position cell, Robot.Common.Robot movingRobot, IList<Robot.Common.Robot> robots)
         {
             foreach (var robot in robots)
@@ -57,6 +66,7 @@ namespace OleksiiRoik.RobotChallenge
             return true;
         }
 
+        //Перевірка  чи станцією не зацікавлений інший робот
         public bool isStantionNotInterested(Position a)
         {
             foreach (var robot in RobotsInfo)
@@ -72,6 +82,7 @@ namespace OleksiiRoik.RobotChallenge
             return true;
         }
 
+        //Перевірка чи робот знаходиться на станції
         public bool isRobotInStation(Robot.Common.Robot movingRobot,
             IList<Robot.Common.Robot> robots, Map map)
         {
@@ -86,24 +97,33 @@ namespace OleksiiRoik.RobotChallenge
             return false;
         }
 
+        //Перевірка чи станція вільна
         public bool IsStationFree(EnergyStation station, Robot.Common.Robot movingRobot,
             IList<Robot.Common.Robot> robots)
         {
             return IsCellFree(station.Position, movingRobot, robots) && isStantionNotInterested(station.Position);
         }
+
+        //Знайти найближчу станцію
         public Position FindNearestFreeStation(int robotToMoveIndex, Map map, IList<Robot.Common.Robot> robots)
         {
             EnergyStation nearest = null;
             Robot.Common.Robot movingRobot = robots[robotToMoveIndex];
             int minDistance = Int32.MaxValue;
+
         
-           
             foreach (var station in map.Stations)
             {
+               
                 if (isStantionNotInterested(station.Position))
                 {
-            
+
                     int d = DistanceHelper.FindDistance(station.Position, movingRobot.Position);
+                    if (isEnemyOnStation(station.Position, robotToMoveIndex, robots))
+                    {
+                        d *= 2;
+                    }
+
                     if (d < minDistance)
                     {
 
@@ -114,19 +134,12 @@ namespace OleksiiRoik.RobotChallenge
                         }
                         else
                         {
-                            foreach (var RobotI in RobotsInfo)
-                            {
-                                if (RobotI.Value.interest == station.Position && RobotI.Key != robotToMoveIndex)
-                                {
-                                    continue;
-                                }
-                                else
-                                {
+                        
                                     minDistance = d;
                                     nearest = station;
 
-                                }
-                            }
+                                
+                            
                         }
                      
                         
@@ -139,25 +152,34 @@ namespace OleksiiRoik.RobotChallenge
 
         
 
+        //Обчислення енергії для миттєвого руху до позиції
         public double EnergyToMove(Position a, Position b)
         {
             return Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2);
         }
 
-        public bool isEnoughEnergyToMove(Position a, Position b, int energy)
+        //Перевірка чи роботу вистачає енергії для руху до позиції
+        public bool isEnoughEnergyToMove(Position a, Position b, int energy, int robotToMoveIndex,
+            IList<Robot.Common.Robot> robots)
         {
-            if (energy < EnergyToMove(a,b))
+            int potentialEnergy = energy;
+            if (isEnemyOnStation(b,robotToMoveIndex,robots))
             {
-                return false;
+                potentialEnergy += 30;
+            }
+            if (potentialEnergy >= EnergyToMove(a,b))
+            {
+                return true;
             }
 
-            return true;
+            return false;
         }
 
+        //Перевірка чи ворог знаходиться на станціЇ
         public bool isEnemyOnStation(Position pos, int robotToMoveIndex,
             IList<Robot.Common.Robot> robots)
         {
-            var enemies = robots.Where(r => r.Owner != robots[robotToMoveIndex].Owner);
+            var enemies = robots.Where(r => r.Owner.Name != robots[robotToMoveIndex].Owner.Name);
             foreach (var enemy in enemies)
             {
                 if (enemy.Position == pos)
@@ -178,15 +200,7 @@ namespace OleksiiRoik.RobotChallenge
             newRobotInfo.interest = stationPosition;
             var enemies = robots.Where(r => r.Owner != robots[robotToMoveIndex].Owner);
             var allies = robots.Where(r => r.Owner == robots[robotToMoveIndex].Owner);
-            //foreach (var enem in enemies)
-            //{
-            //    if (DistanceHelper.FindDistance(enem.Position, robots[robotToMoveIndex].Position) < 100 && enem.Energy > robots[robotToMoveIndex].Energy && allies.Count() > 10)
-            //    {
-            //        newRobotInfo.interest = enem.Position;
-            //        newRobotInfo.state = RobotState.Attacking;
-            //    }
-            //}
-            if (EnergyToMove(movingRobot.Position, stationPosition) > 400)
+            if (EnergyToMove(movingRobot.Position, stationPosition) > 520)
             {
                 newRobotInfo.state = RobotState.Weak;
             }
@@ -233,7 +247,9 @@ namespace OleksiiRoik.RobotChallenge
 
         public RobotCommand DoStep(IList<Robot.Common.Robot> robots, int robotToMoveIndex, Map map)
         {
-            
+
+            var myRobots = robots.Where(d => d.Owner.Name == robots[robotToMoveIndex].Owner.Name);
+            int robotsCount = myRobots.Count();
             if (!RobotsInfo.ContainsKey(robotToMoveIndex))
             {
                 RobotInitialize(robots, robotToMoveIndex, map);
@@ -271,10 +287,11 @@ namespace OleksiiRoik.RobotChallenge
                     RobotInfo temp = RobotsInfo[robotToMoveIndex];
                     temp.state = RobotState.Collecting;
                     RobotsInfo[robotToMoveIndex] = temp;
-                    
+                    return new CollectEnergyCommand();
+
                 }
 
-                if (isEnoughEnergyToMove(movingRobot.Position, movingRobInfo.interest, movingRobot.Energy))
+                if (isEnoughEnergyToMove(movingRobot.Position, movingRobInfo.interest, movingRobot.Energy,robotToMoveIndex,robots))
                 {
                     return new MoveCommand() {NewPosition = movingRobInfo.interest};
                 }
@@ -286,11 +303,11 @@ namespace OleksiiRoik.RobotChallenge
                     Position stationPosition = movingRobInfo.interest;
                     if (isEnemyOnStation(stationPosition, robotToMoveIndex, robots))
                     {
-                        Step = 2;
+                        Step = 4;
                     }
                     else
                     {
-                        Step = 4;
+                        Step = 5;
                     }
                     Position newPosition = movingRobot.Position;
                      if (stationPosition.X > movingRobot.Position.X)
@@ -301,11 +318,11 @@ namespace OleksiiRoik.RobotChallenge
                              }
                          else if (stationPosition.Y == movingRobot.Position.Y)
                         {
-                                    newPosition.X += Step;
+                                    newPosition.X += Step + 2;
                         }
                         else
                         {
-                            newPosition.X += movingRobot.Energy / 35 + 1;
+                            newPosition.X += Step;
                         }
                     }
                     else if (stationPosition.X < movingRobot.Position.X)
@@ -316,11 +333,11 @@ namespace OleksiiRoik.RobotChallenge
                         }
                         else if (stationPosition.Y == movingRobot.Position.Y)
                         {
-                            newPosition.X -= Step;
+                            newPosition.X -= Step + 2;
                         }
                         else
                         {
-                            newPosition.X -= movingRobot.Energy / 35 + 1;
+                            newPosition.X -= Step;
                         }
 
                     }
@@ -332,11 +349,11 @@ namespace OleksiiRoik.RobotChallenge
                         }
                         else if (stationPosition.X == movingRobot.Position.X)
                         {
-                            newPosition.Y += Step;
+                            newPosition.Y += Step + 2;
                         }
                         else
                         {
-                            newPosition.Y += movingRobot.Energy / 35 + 1;
+                            newPosition.Y += Step;
                         }
 
                     }
@@ -348,16 +365,16 @@ namespace OleksiiRoik.RobotChallenge
                         }
                         else if (stationPosition.X == movingRobot.Position.X)
                         {
-                            newPosition.Y -= Step;
+                            newPosition.Y -= Step + 2;
                         }
                         else
                         {
-                            newPosition.Y -= movingRobot.Energy/35 + 1;
+                            newPosition.Y -= Step;
                         }
 
                     }
 
-                    if (!isEnoughEnergyToMove(movingRobot.Position, newPosition, (movingRobot.Energy)))
+                    if (!isEnoughEnergyToMove(movingRobot.Position, newPosition, (movingRobot.Energy), robotToMoveIndex, robots))
                     {
                         RobotInfo temp = RobotsInfo[robotToMoveIndex];
                         temp.state = RobotState.Weak;
@@ -369,37 +386,77 @@ namespace OleksiiRoik.RobotChallenge
                     return new MoveCommand() { NewPosition = newPosition };
                 }
             } 
-            else if (movingRobInfo.state == RobotState.Collecting)
+            if (movingRobInfo.state == RobotState.Collecting)
             {
-                if (movingRobot.Energy >= 420)
+                if (robots[robotToMoveIndex].Position != RobotsInfo[robotToMoveIndex].interest)
                 {
+                    return new MoveCommand() {NewPosition = RobotsInfo[robotToMoveIndex].interest};
+                }
+             
+               
                     Position newPosition = FindNearestFreeStation(robotToMoveIndex, map, robots);
-                    int EnergyToNewRobot = 100;
+                    int EnergyToNewRobot = (int)EnergyToMove(movingRobot.Position, newPosition) + 40;
                     if (isEnemyOnStation(newPosition, robotToMoveIndex, robots))
                     {
-                        EnergyToNewRobot = 200;
+                        EnergyToNewRobot += 30;
                     }
-                    if (isEnoughEnergyToMove(movingRobot.Position, newPosition, 420)  && isStantionNotInterested(newPosition))
+                if (EnergyToNewRobot >= 500)
+                {
+                    EnergyToNewRobot /= 2;
+                    EnergyToNewRobot += 30;
+                }
+                if (movingRobot.Energy >= (EnergyToNewRobot + 200) && isStantionNotInterested(newPosition))
                     {
+                        if (robotsCount >= 72)
+                        {
+                            return new CollectEnergyCommand();
+                        }
+
+                        if (EnergyToNewRobot < movingRobot.Energy + 250)
+                        {
+                           if (EnergyToNewRobot >= 700)
+                            {
+                                return new CollectEnergyCommand();
+                            }
+
+                            return new CreateNewRobotCommand() {NewRobotEnergy = EnergyToNewRobot};
+                        }
                         //RobotInfo temp = RobotsInfo[robotToMoveIndex];
                         //temp.state = RobotState.Moving;
                         //temp.interest = newPosition;
                         //temp.isDividing++;
                         //RobotsInfo[robotToMoveIndex] = temp;
-                        return new CreateNewRobotCommand(){NewRobotEnergy = EnergyToNewRobot};
+                        //if (EnergyToNewRobot > 150)
+                        //{
+                        //    EnergyToNewRobot = 150;
+                        //}
+
+
                     }
-                  
 
 
 
-                }
                 return new CollectEnergyCommand();
             }
-            else if (RobotsInfo[robotToMoveIndex].state == RobotState.Weak)
+             
+            if (RobotsInfo[robotToMoveIndex].state == RobotState.Weak)
             {
                 if (isCollectReady(robots, robotToMoveIndex, map))
                 {
                     return new CollectEnergyCommand();
+                }
+                else if(robots[robotToMoveIndex].Energy > 10)
+                {
+                    Position stationPosition = FindNearestFreeStation(robotToMoveIndex, map, robots);
+                    if (isEnoughEnergyToMove(movingRobot.Position, stationPosition, (movingRobot.Energy)*3, robotToMoveIndex, robots))
+                    {
+                        RobotInfo temp = RobotsInfo[robotToMoveIndex];
+                        temp.state = RobotState.Moving;
+                        temp.interest = stationPosition;
+                        RobotsInfo[robotToMoveIndex] = temp;
+                        return new MoveCommand() { NewPosition = stationPosition};
+                    }
+
                 }
                 else
                 {
